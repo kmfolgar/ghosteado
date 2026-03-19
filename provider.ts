@@ -4,10 +4,9 @@
  * block logging, and the onBlock event for the extension UI.
  *
  * Also exports GhostContentProvider: a TextDocumentContentProvider
- * registered under the "ghosteado" scheme. When a ghosted file is opened,
- * the real document is closed and this provider serves a read-only warning
- * document in its place, so any agent that reads the "file" sees only the
- * warning instead of real data.
+ * registered under the "ghosteado" scheme. When a protected host path is
+ * opened directly in VS Code, Ghosteado can replace the editor tab with a
+ * warning document that tells the user to resume inside the container.
  */
 
 import * as vscode from "vscode";
@@ -26,15 +25,14 @@ export class GhostContentProvider implements vscode.TextDocumentContentProvider 
   provideTextDocumentContent(uri: vscode.Uri): string {
     const originalPath = decodeURIComponent(uri.path.replace(/^\//, ""));
     return [
-      "⚠️  WARNING: This file was marked as sensitive, do not let the Agent open it.",
+      "👻 WARNING: This protected dataset path was opened on the host.",
       "",
       `Protected file : ${originalPath}`,
       `Blocked by     : Ghosteado`,
       "",
-      "This is a read-only placeholder. The real file has not been transmitted.",
-      "If you are a human user and need access, click \"Open Anyway\" in the",
-      "notification that appeared, or run the command:",
-      "  Ghosteado: Remove Ghost",
+      "Use Ghosteado's container workflow for AI-assisted work.",
+      "If you need the host file directly, choose \"Open Anyway\" from the warning",
+      "notification or remove data protection from this dataset.",
     ].join("\n");
   }
 }

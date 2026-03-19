@@ -1,13 +1,13 @@
 # Releases
 
-## v0.9.0 — Container Protection
+## v1.0.0 — Container-First Protection
 
-**File:** `ghosteado-0.9.0.vsix`
+**File:** `ghosteado-1.0.0.vsix`
 
 ### Install from command line
 
 ```bash
-code --install-extension ghosteado-0.9.0.vsix
+code --install-extension ghosteado-1.0.0.vsix
 ```
 
 ### Build from source

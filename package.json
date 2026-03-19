@@ -1,8 +1,8 @@
 {
   "name": "ghosteado",
   "displayName": "Ghosteado",
-  "description": "Ghosts sensitive data folders from AI agents. Blocks access, logs attempts, generates safe simulated datasets, and creates isolated devcontainers.",
-  "version": "0.9.0",
+  "description": "Container-first data protection for VS Code workspaces. Externalizes real datasets, preserves stable host paths, captures safe schema summaries, and mounts synthetic workspaces into devcontainers when needed.",
+  "version": "1.0.0",
   "author": "Kevin Martinez-Folgar",
   "publisher": "KevinMF",
   "engines": { "vscode": "^1.85.0" },
@@ -14,15 +14,23 @@
     "commands": [
       {
         "command": "ghosteado.protectFolder",
-        "title": "👻 Ghosteado: Ghost This Folder"
+        "title": "👻 Ghosteado: Protect This Dataset"
       },
       {
         "command": "ghosteado.unprotectFolder",
-        "title": "🔓 Ghosteado: Remove Ghost"
+        "title": "🔓 Ghosteado: Remove Data Protection"
       },
       {
         "command": "ghosteado.showStatus",
-        "title": "Ghosteado: Show Status & Access Log"
+        "title": "Ghosteado: Show Protected Workspace Status"
+      },
+      {
+        "command": "ghosteado.viewSchema",
+        "title": "Ghosteado: View Schema"
+      },
+      {
+        "command": "ghosteado.copySimulationPrompt",
+        "title": "Ghosteado: Copy Simulation Prompt"
       },
       {
         "command": "ghosteado.clearLog",
@@ -30,7 +38,7 @@
       },
       {
         "command": "ghosteado.regenerateSimulated",
-        "title": "Ghosteado: Regenerate Simulated Data"
+        "title": "Ghosteado: Prepare Synthetic Data Prompt"
       },
       {
         "command": "ghosteado.setupWizard",
@@ -38,7 +46,11 @@
       },
       {
         "command": "ghosteado.addContainerProtection",
-        "title": "🐳 Ghosteado: Add Container Protection"
+        "title": "🐳 Ghosteado: Refresh Container Protection"
+      },
+      {
+        "command": "ghosteado.resumeProtectedWorkspace",
+        "title": "Ghosteado: Resume Protected Workspace"
       }
     ],
     "menus": {
@@ -61,24 +73,24 @@
         "ghosteado.protectedFolders": {
           "type": "array",
           "default": [],
-          "description": "Folder paths currently ghosted from AI agents.",
+          "description": "Workspace dataset paths that should warn if opened on the host instead of inside the container.",
           "items": { "type": "string" }
         },
         "ghosteado.simulatedRowCount": {
           "type": "number",
           "default": 20,
-          "description": "Rows to generate in simulated CSV datasets."
+          "description": "Default row count to include when generating synthetic data prompts."
         },
         "ghosteado.simulatedSeed": {
           "type": "number",
           "default": 42,
-          "description": "Seed for deterministic fake data generation."
+          "description": "Reserved for future synthetic data helpers."
         },
         "ghosteado.notifyOnBlock": {
           "type": "string",
           "enum": ["statusBar", "notification", "both"],
           "default": "both",
-          "description": "How to alert you when a blocked read is attempted."
+          "description": "How to alert you when a protected dataset path is opened on the host."
         }
       }
     }

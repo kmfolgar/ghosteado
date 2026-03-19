@@ -1,188 +1,185 @@
 /**
- * wizard.ts — Ghosteado Data Protection Setup Wizard
+ * wizard.ts
+ * Container-first Ghosteado data protection wizard.
  *
- * A 4-step native VS Code dialog flow that guides the user through:
- *   1. Pick the sensitive data folder
- *   2. Choose to move it outside the workspace (optional)
- *   3. Select analysis language for simulation scripts (R / Python / both)
- *   4. Set row count, confirm, and execute
- *
- * After the wizard completes, extension.ts calls runContainerStep() from
- * devcontainer.ts to optionally add Docker container isolation (step 5).
+ * The wizard now focuses on:
+ *   1. Selecting the dataset folder inside the workspace
+ *   2. Moving that dataset outside the workspace
+ *   3. Leaving a stable host path behind via a link at the original location
+ *   4. Capturing schema for prompt generation
+ *   5. Optionally preparing a synthetic workspace for in-container execution
  */
 
 import * as vscode from "vscode";
 import * as os from "os";
 import * as path from "path";
+import type { PromptLanguage } from "./simulator";
 
-export type ScriptLanguage = "r" | "python";
-
-export interface WizardResult {
+export interface ProtectionWizardResult {
   sourceFolderPath: string;
-  /** Destination path outside workspace. undefined = keep in place. */
-  moveToPath: string | undefined;
-  languages: ScriptLanguage[];
-  rowCount: number;
+  realDatasetPath: string;
+  promptLanguage: PromptLanguage;
+  prepareSyntheticWorkspace: boolean;
 }
 
-/**
- * @param preSelected  URI already known (e.g. from Explorer right-click).
- *                     If provided, step 1 (folder picker) is skipped.
- */
 export async function runSetupWizard(
   workspaceRoot: string,
   preSelected?: vscode.Uri
-): Promise<WizardResult | undefined> {
-  // ── Step 1: Pick sensitive folder (skipped when called from context menu) ──
-
+): Promise<ProtectionWizardResult | undefined> {
   let sourceFolderPath: string;
+
   if (preSelected) {
     sourceFolderPath = preSelected.fsPath;
   } else {
-    const step1 = await vscode.window.showOpenDialog({
+    const picked = await vscode.window.showOpenDialog({
       canSelectFiles: false,
       canSelectFolders: true,
       canSelectMany: false,
-      openLabel: "Select This Folder",
-      title: "Ghosteado (1/4) — Which folder contains your sensitive data?",
+      openLabel: "Protect This Folder",
+      title: "Ghosteado (1/4) - Select the dataset folder to protect",
       defaultUri: vscode.Uri.file(workspaceRoot),
     });
-    if (!step1?.[0]) return undefined;
-    sourceFolderPath = step1[0].fsPath;
+    if (!picked?.[0]) return undefined;
+    sourceFolderPath = picked[0].fsPath;
   }
-  const folderName = path.basename(sourceFolderPath);
 
-  // ── Step 2: Move outside workspace? ───────────────────────────────────────
+  const projectName = path.basename(workspaceRoot);
+  const workspaceFolderRel = path.relative(workspaceRoot, sourceFolderPath);
 
-  const step2 = await vscode.window.showQuickPick(
+  if (
+    workspaceFolderRel === "" ||
+    workspaceFolderRel.startsWith("..") ||
+    path.isAbsolute(workspaceFolderRel)
+  ) {
+    void vscode.window.showErrorMessage(
+      "Ghosteado: Select a dataset folder inside the current workspace, not the workspace root."
+    );
+    return undefined;
+  }
+
+  const destinationPick = await vscode.window.showQuickPick(
     [
       {
-        label: "$(folder-moved) Move outside workspace",
-        description: "Recommended — data lives outside VS Code's reach entirely",
-        detail: `Will copy "${folderName}" to a location you choose, outside the project folder.`,
-        value: "move",
+        label: "Protected research data root (Recommended)",
+        description: `Use ~/Protected-Research-Data/${projectName}`,
+        value: "default",
       },
       {
-        label: "$(shield) Keep in place and ghost it",
-        description: "Data stays here but AI agents are blocked from reading it",
-        detail: "Simpler setup. Good if you can't move the data.",
-        value: "keep",
+        label: "Choose another host location",
+        description: "Pick a different folder outside the workspace",
+        value: "custom",
       },
     ],
     {
-      title: "Ghosteado (2/4) — Where should the data live?",
-      placeHolder: "Choose a data location strategy",
+      title: "Ghosteado (2/4) - Where should the real dataset live?",
+      placeHolder: "The real dataset will be moved outside the workspace and linked back at its current path on the host",
       ignoreFocusOut: true,
     }
   );
-  if (!step2) return undefined;
+  if (!destinationPick) return undefined;
 
-  let moveToPath: string | undefined;
+  const defaultParent = path.join(os.homedir(), "Protected-Research-Data", projectName);
+  let destinationParent = defaultParent;
 
-  if (step2.value === "move") {
-    const projectName = path.basename(workspaceRoot);
-    const defaultDestParent = path.join(os.homedir(), "Protected-Research-Data", projectName);
-    vscode.window.showInformationMessage(
-      `Suggested destination: ${defaultDestParent} — pick or create a folder below.`
-    );
-    const destResult = await vscode.window.showOpenDialog({
+  if (destinationPick.value === "custom") {
+    const selected = await vscode.window.showOpenDialog({
       canSelectFiles: false,
       canSelectFolders: true,
       canSelectMany: false,
-      openLabel: "Move Data Here",
-      title: `Ghosteado (2/4) — Pick destination folder (suggested: ~/Protected-Research-Data/${projectName})`,
+      openLabel: "Store Data Here",
+      title: "Ghosteado (2/4) - Pick a host folder for the real dataset",
       defaultUri: vscode.Uri.file(path.join(os.homedir(), "Protected-Research-Data")),
     });
-    if (!destResult?.[0]) return undefined;
-    moveToPath = path.join(destResult[0].fsPath, folderName);
+    if (!selected?.[0]) return undefined;
+    destinationParent = selected[0].fsPath;
   }
 
-  // ── Step 3: Script language ────────────────────────────────────────────────
-
-  const step3 = await vscode.window.showQuickPick(
+  const languagePick = await vscode.window.showQuickPick(
     [
       {
-        label: "$(file-code) R",
-        description: "Creates a prompt that tells your AI to write an R simulation script",
-        detail: "Paste it into Copilot Chat, Cursor, or Claude — the AI writes the script for you",
+        label: "R (Recommended)",
+        description: "Use R-focused prompt instructions for schema-aware code generation",
         value: "r",
       },
       {
-        label: "$(file-code) Python",
-        description: "Creates a prompt that tells your AI to write a Python simulation script",
-        detail: "Paste it into Copilot Chat, Cursor, or Claude — the AI writes the script for you",
+        label: "Python",
+        description: "Use Python-focused prompt instructions",
         value: "python",
       },
       {
-        label: "$(files) Both R and Python",
-        description: "Creates a prompt asking for both languages",
+        label: "Both R and Python",
+        description: "Generate prompts that work for both analysis stacks",
         value: "both",
       },
       {
-        label: "$(circle-slash) Skip — use placeholder CSV only",
-        description: "Ghosteado writes a basic placeholder CSV immediately, no AI prompt",
+        label: "No language preference",
+        description: "Keep the prompt language-neutral",
         value: "none",
       },
     ],
     {
-      title: "Ghosteado (3/4) — Simulation script language",
-      placeHolder: "Which language do you use for data analysis?",
+      title: "Ghosteado (3/4) - Prompt language",
+      placeHolder: "Choose the default language for schema and synthetic data prompts",
       ignoreFocusOut: true,
     }
   );
-  if (!step3) return undefined;
+  if (!languagePick) return undefined;
 
-  const languages: ScriptLanguage[] =
-    step3.value === "both"
-      ? ["r", "python"]
-      : step3.value === "none"
-      ? []
-      : [step3.value as ScriptLanguage];
+  const syntheticPick = await vscode.window.showQuickPick(
+    [
+      {
+        label: "Prepare a synthetic workspace (Recommended)",
+        description: "Create src/_simulated and a prompt scaffold for optional in-container synthetic data",
+        value: "prepare",
+      },
+      {
+        label: "Skip synthetic setup for now",
+        description: "Container can still generate code from schema, but not run end-to-end data reads yet",
+        value: "skip",
+      },
+    ],
+    {
+      title: "Ghosteado (4/4) - Synthetic workspace",
+      placeHolder: "Choose whether Ghosteado should prepare a synthetic data location now",
+      ignoreFocusOut: true,
+    }
+  );
+  if (!syntheticPick) return undefined;
 
-  // ── Step 4: Row count + confirm ────────────────────────────────────────────
-
-  const step4 = await vscode.window.showInputBox({
-    title: "Ghosteado (4/4) — Simulated dataset size",
-    prompt: "How many rows should the simulated dataset have?",
-    value: "100",
-    ignoreFocusOut: true,
-    validateInput: (v) => {
-      const n = parseInt(v, 10);
-      if (isNaN(n) || n < 1 || n > 100_000) return "Enter a number between 1 and 100,000";
-      return undefined;
-    },
-  });
-  if (step4 === undefined) return undefined;
-  const rowCount = parseInt(step4, 10);
-
-  // ── Confirm summary ────────────────────────────────────────────────────────
+  const realDatasetPath = path.join(destinationParent, workspaceFolderRel);
+  const prepareSyntheticWorkspace = syntheticPick.value === "prepare";
+  const promptLanguage = languagePick.value as PromptLanguage;
 
   const summaryLines = [
-    moveToPath
-      ? `• Copy "${folderName}" → ${moveToPath}`
-      : `• Ghost "${folderName}" in place`,
-    `• Write AI ignore files (.copilotignore, .cursorignore, etc.)`,
-    `• Exclude from workspace search (search.exclude)`,
-    languages.includes("r")
-      ? `• Generate _simulated/generate_simulated.R (${rowCount} rows)`
-      : "",
-    languages.includes("python")
-      ? `• Generate _simulated/generate_simulated.py (${rowCount} rows)`
-      : "",
-    `• Generate placeholder CSV immediately in _simulated/`,
-    moveToPath
-      ? `\nNote: original files are NOT deleted automatically — you can remove them manually after verifying the copy.`
-      : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+    `- Move the real dataset to: ${realDatasetPath}`,
+    `- Preserve the workspace-relative folder structure outside the workspace`,
+    `- Replace the workspace folder with a host link at the same path`,
+    `- Keep analysis paths stable for host tools and container overlays`,
+    `- Capture a local-only schema summary for prompts`,
+    `- Create src/ if it does not exist`,
+    prepareSyntheticWorkspace
+      ? `- Prepare synthetic workspace under src/_simulated/${workspaceFolderRel}`
+      : "- Do not prepare synthetic files yet",
+    `- Rebuild container protection so AI work happens in the isolated runtime`,
+    "",
+    "Protection note:",
+    "The host link keeps paths stable for RStudio or Jupyter outside the container. Use AI tools inside the container, not on the host, if you want the isolation boundary to hold.",
+    !prepareSyntheticWorkspace
+      ? "If no synthetic data exists, the container can still generate code from schema, but it cannot run end-to-end data reads. That is fine if the goal is code generation first. If you want runnable code in-container, synthetic data needs to exist and be mounted there."
+      : "Synthetic workspace preparation does not create fake data automatically. You will still generate or add synthetic data explicitly later.",
+  ];
 
   const confirm = await vscode.window.showWarningMessage(
-    `Ghosteado will do the following:\n\n${summaryLines}`,
+    `Ghosteado will do the following:\n\n${summaryLines.filter(Boolean).join("\n")}`,
     { modal: true },
-    "Proceed"
+    "Protect Dataset"
   );
-  if (confirm !== "Proceed") return undefined;
+  if (confirm !== "Protect Dataset") return undefined;
 
-  return { sourceFolderPath, moveToPath, languages, rowCount };
+  return {
+    sourceFolderPath,
+    realDatasetPath,
+    promptLanguage,
+    prepareSyntheticWorkspace,
+  };
 }
